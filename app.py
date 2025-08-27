@@ -1,50 +1,99 @@
-# app.py — Step 1: Load cached models only (no training on startup)
-
-import os, json, joblib, math
+# ---- TOP OF FILE (imports and absolute paths) ----
+import os, json, joblib, glob, math
+from pathlib import Path
 import pandas as pd
-import numpy as np
 import streamlit as st
 
-MODEL_DIR = "models_cache"
+BASE_DIR  = Path(__file__).resolve().parent
+MODEL_DIR = BASE_DIR / "models_cache"   # absolute path works locally + on cloud
 
 st.set_page_config(page_title="PV Annual Results Predictor", layout="wide")
 st.title("🔆 PV Annual Results (kWh) — Model Comparison")
 
 # ---------- Utilities ----------
-def find_latest_bundle(model_dir: str):
-    """Return path to most-recent bundle_*.json (by meta.trained_at)."""
-    if not os.path.isdir(model_dir):
+def find_latest_bundle(model_dir: Path):
+    if not model_dir.is_dir():
         return None, None
-    bundle_files = [f for f in os.listdir(model_dir) if f.startswith("bundle_") and f.endswith(".json")]
-    if not bundle_files:
+    bundles = sorted(model_dir.glob("bundle_*.json"))
+    if not bundles:
         return None, None
-    best = None
-    best_meta = None
-    for bf in bundle_files:
-        path = os.path.join(model_dir, bf)
+    best, best_meta = None, None
+    for bp in bundles:
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(bp, "r", encoding="utf-8") as f:
                 manifest = json.load(f)
             meta = manifest.get("meta", {})
             if best_meta is None or int(meta.get("trained_at", 0)) > int(best_meta.get("trained_at", 0)):
-                best = path
-                best_meta = meta
+                best, best_meta = bp, meta
         except Exception:
             continue
     return best, best_meta
 
-def load_bundle(bundle_path: str):
+def _sanitize_name(s: str) -> str:
+    # make name matching a bit more forgiving (spaces, parentheses)
+    return s.replace(" ", "_").replace("(", "").replace(")", "").lower()
+
+def load_bundle(bundle_path: Path):
     with open(bundle_path, "r", encoding="utf-8") as f:
         manifest = json.load(f)
-    trained = {}
-    for name, info in manifest["models"].items():
-        est = joblib.load(info["est_path"])
-        trained[name] = {"estimator": est, "metrics": info["metrics"]}
-    leaderboard = pd.DataFrame(manifest["leaderboard"])
-    leaderboard.index.name = None
+
     feature_names = manifest["feature_names"]
     meta = manifest.get("meta", {})
+    fingerprint = meta.get("fingerprint", "")
+
+    # What files does the container actually have?
+    present_files = sorted(p.name for p in MODEL_DIR.glob("*.joblib"))
+
+    st.caption("Files present in models_cache/")
+    st.write(present_files)
+
+    # Prepare helpers for matching
+    present_map = {p: (MODEL_DIR / p) for p in present_files}
+    used_files = set()
+
+    trained = {}
+    for name, info in manifest["models"].items():
+        stored = info.get("est_path", "")
+        base = os.path.basename(stored)
+        cand = present_map.get(base) if base in present_map else None
+
+        # Fallback 1: expected trainer pattern
+        if cand is None:
+            expected = f"{fingerprint}_{name.replace(' ', '_')}.joblib"
+            if expected in present_map:
+                cand = present_map[expected]
+
+        # Fallback 2: fuzzy match by model name
+        if cand is None:
+            target_key = _sanitize_name(name)
+            matches = [present_map[p] for p in present_files
+                       if _sanitize_name(p).find(target_key) != -1 and p not in used_files]
+            if matches:
+                cand = matches[0]
+
+        # Fallback 3: if count matches (same # files as models), assign any unused .joblib
+        if cand is None:
+            leftovers = [present_map[p] for p in present_files if p not in used_files]
+            if len(leftovers) == (len(manifest["models"]) - len(trained)) == 1:
+                cand = leftovers[0]
+
+        if cand is None or not cand.exists():
+            raise FileNotFoundError(
+                f"Model file for '{name}' not found.\n"
+                f"- est_path in manifest: {stored}\n"
+                f"- Tried basename: {base}\n"
+                f"- Also expected: {fingerprint}_{name.replace(' ', '_')}.joblib\n"
+                f"- Present files: {present_files}"
+            )
+
+        est = joblib.load(cand)
+        used_files.add(cand.name)
+        trained[name] = {"estimator": est, "metrics": info.get("metrics", {})}
+
+    leaderboard = pd.DataFrame(manifest["leaderboard"])
+    leaderboard.index.name = None
     return trained, leaderboard, feature_names, meta
+
 
 def angle_from_neighbor(our_h: float, neigh_h: float, dist: float) -> float:
     if dist is None or dist <= 0:
@@ -85,11 +134,11 @@ def get_feature_importances(estimator, feature_names):
 # ---------- Load latest cached bundle ----------
 bundle_path, bundle_meta = find_latest_bundle(MODEL_DIR)
 if not bundle_path:
-    st.error("No cached models found in `models_cache/`.\n\nTrain them first with your notebook/CLI script, or proceed to Step 2 (add training button).")
+    st.error("No cached models found in models_cache/. Commit bundle_*.json and the .joblib files.")
     st.stop()
 
 trained_models, leaderboard, feature_names, meta = load_bundle(bundle_path)
-st.success(f"Loaded cached models: `{os.path.basename(bundle_path)}` (fingerprint: {meta.get('fingerprint')}, trained_at: {meta.get('trained_at')})")
+st.success(f"Loaded: {bundle_path.name} (fingerprint: {meta.get('fingerprint')})")
 
 st.subheader("🏁 Model Leaderboard (hold-out test set)")
 st.dataframe(leaderboard.style.format({"R2": "{:.4f}", "RMSE": "{:,.2f}", "MAE": "{:,.2f}", "Adjusted R2": "{:,.2f}", "MAPE": "{:,.2f}"}), use_container_width=True)
