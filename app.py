@@ -369,8 +369,30 @@ with tab4:
 
 with tab5:
     st.subheader("Methodology")
-    st.write("This tool predicts the PV output based on building dimensions and the shading angles of surrounding structures.")
-    st.write("The Levelized Cost of Electricity (LCOE) evaluates the economic potential of the PV system over its 25-year lifecycle. The cost includes the initial setup ($600 or $880 per kW) and annual O&M ($5.60 per kW), discounted at 10% per year. Energy output drops by 0.6% annually due to hardware degradation.")
+    
+    st.markdown("""
+    This tool estimates the annual electricity production of rooftop solar panels and evaluates if the system is a good financial investment. The calculations happen in three main steps: defining the building geometry, predicting the energy output, and checking the costs.
+    
+    ### 1. Building Setup and Shading
+    The app first figures out how much space is actually available for solar panels. It takes the total roof area (Length × Width) and subtracts 32 square meters to leave room for standard rooftop equipment like HVAC units. The actual solar panel area is then calculated using the formula:  
+    **PV Area = (0.564 × Roof Area) - 40.58**
+    
+    Shadows from nearby buildings have a huge impact on solar efficiency. To account for this, the tool calculates a shading angle for the neighbors to the North, South, East, and West. If a neighboring building is taller than the main building, the tool measures the height difference and divides it by the distance between them to find the specific shading angle.
+    
+    ### 2. Machine Learning Predictions
+    Instead of running slow environmental simulations, this app uses trained machine learning models (such as Random Forest and Extra Trees). These models learned from thousands of prior building simulations. They take the building's roof area and the four shading angles as inputs to instantly predict the total annual electricity generation in kilowatt-hours (kWh).
+    
+    ### 3. Economic Assessment (LCOE)
+    Once the app knows how much power the building can make, it calculates the Levelized Cost of Electricity (LCOE). This formula finds the true cost of each unit of solar energy over the system's 25-year lifespan. 
+    
+    The financial math uses these rules:
+    * **Hardware Degradation:** The panels lose 0.6% of their power output every year due to normal aging.
+    * **Discount Rate:** Future costs and energy values are discounted at a rate of 10% per year to account for the time value of money.
+    * **Maintenance (O&M):** Cleaning and running the system costs $5.60 per kilowatt of capacity annually.
+    * **Initial Setup Cost:** The tool tests an optimistic price ($600 per kW) and a moderate price ($880 per kW).
+    
+    Finally, the tool compares the calculated LCOE against the local commercial grid price of **$0.0466 per kWh (2.33 EGP)**. If the LCOE is lower than the grid price, the project saves money and is marked as economically viable. Based on the underlying data, buildings typically need to generate at least 285 kWh per square meter of panel area to break even in the moderate cost scenario.
+    """)
     
     with st.expander("View Full Derived Input Variables"):
         st.json(derived)
