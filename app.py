@@ -243,7 +243,7 @@ st.sidebar.markdown("### Economic Parameters")
 sys_capacity = st.sidebar.number_input("PV System Capacity (kW)", min_value=1.0, value=float(default_kw), step=1.0, help="Used for LCOE calculations.")
 
 # Use Tabs to keep the UI clean
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Results", "💰 Economic Viability (LCOE)", "🏙️ 3D Site Context",  "📝 Methodology"])
+tab1, tab2, tab3, tab4 = st.tabs(["📊 Results", "💰 Economic Viability (LCOE)", "🏙️ 3D Site Context",  "📝 Methodology"])
 
 with tab1:
     st.subheader("Model Predictions")
