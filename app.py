@@ -153,8 +153,13 @@ if not bundle_path:
 
 trained_models, leaderboard, feature_names, meta = load_bundle(bundle_path)
 
-st.subheader("🏁 Model Leaderboard (hold-out test set)")
-st.dataframe(leaderboard.style.format({"R2": "{:.4f}", "RMSE": "{:,.2f}", "MAE": "{:,.2f}", "Adjusted R2": "{:,.2f}", "MAPE": "{:,.2f}"}), use_container_width=True)
+# Filter out ANN and SVM models
+clean_models = {}
+for name, data in trained_models.items():
+    name_upper = name.upper()
+    if "ANN" not in name_upper and "SVM" not in name_upper:
+        clean_models[name] = data
+trained_models = clean_models
 
 # ---------- Inputs ----------
 st.markdown("---")
