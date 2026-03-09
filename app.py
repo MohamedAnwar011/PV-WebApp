@@ -287,17 +287,11 @@ with tab2:
 with tab3:
     st.subheader("Urban Context Visualization")
     
-    # Create the data for all buildings
+    # Create the data for the main building and neighbors
     buildings_data = [
-        # Main Building (Light Gray)
         {"name": "Main Building", "height": height, "color": [210, 210, 210, 255], 
          "polygon": get_geo_polygon(0, 0, width, length)},
         
-        # Solar Panels on top (Dark Blue)
-        {"name": "Solar Array", "height": height + 0.5, "color": [10, 50, 120, 255], 
-         "polygon": get_geo_polygon(0, 0, width * 0.8, length * 0.8)},
-        
-        # Neighbors (Slate Gray)
         {"name": "South Neighbor", "height": south_h, "color": [140, 150, 160, 255], 
          "polygon": get_geo_polygon(0, -(length/2 + south_d + 5), width, 10)},
         
@@ -310,6 +304,23 @@ with tab3:
         {"name": "West Neighbor", "height": west_h, "color": [140, 150, 160, 255], 
          "polygon": get_geo_polygon(-(width/2 + west_d + 5), 0, 10, length)}
     ]
+    
+    # Draw rows of solar panels instead of one big block
+    num_rows = 5
+    row_width = width * 0.8
+    row_length = (length * 0.8) / (num_rows * 2) 
+    
+    start_y = - (length * 0.4) + (row_length / 2)
+    step_y = (length * 0.8) / num_rows
+    
+    for i in range(num_rows):
+        cy = start_y + (i * step_y)
+        buildings_data.append({
+            "name": f"Solar Row {i+1}", 
+            "height": height + 0.5, 
+            "color": [10, 50, 120, 255], 
+            "polygon": get_geo_polygon(0, cy, row_width, row_length)
+        })
     
     df_map = pd.DataFrame(buildings_data)
     
@@ -343,7 +354,6 @@ with tab3:
     )
     
     st.pydeck_chart(r, use_container_width=True)
-
 with tab4:
     st.subheader("What drives these predictions?")
     st.markdown("The charts below show which features the models rely on the most.")
