@@ -207,7 +207,7 @@ best_model_name = pred_df.iloc[0]["Model"]
 best_model_val = pred_df.iloc[0]["PV/EUI%"]
 
 col1, col2, col3 = st.columns(3)
-col1.metric("Highest Predicted Yield", f"{best_model_val*100:,.2f} &=%", f"Model: {best_model_name}")
+col1.metric("Highest Predicted Yield", f"{best_model_val*100:,.2f} %", f"Model: {best_model_name}")
 col2.metric("Available Roof Area", f"{derived['Roof Area']:,.1f} m²")
 col3.metric("Total Floor Area", f"{derived['Total Floor Area']:,.1f} m²")
 
