@@ -89,25 +89,28 @@ def angle_from_neighbor(our_h: float, neigh_h: float, dist: float) -> float:
 
 def compute_derived(length, width, height, south_h, south_d, east_h, east_d, north_h, north_d, west_h, west_d, No_of_floors):
     roof_area = (length or 0.0) * (width or 0.0) - 32.0
+    pv_area = 0.564177304724450 * roof_area - 40.5805869459240
     total_floor_area = ((length or 0.0) * (width or 0.0) - 32) * No_of_floors
     roof_area_total_floor_area = (roof_area / total_floor_area) if total_floor_area > 0 else 0.0 
     
     return {
         "Roof Area": roof_area,
+        "PV Area": pv_area,
         "South Angle": angle_from_neighbor(height, south_h, south_d),
         "East":        angle_from_neighbor(height, east_h,  east_d),
         "North":       angle_from_neighbor(height, north_h, north_d),
         "West":        angle_from_neighbor(height, west_h,  west_d),
         "Total Floor Area": total_floor_area,
-        "% roof Area/total floor area": roof_area_total_floor_area
+        "% roof Area/total floor area": roof_area_total_floor_area,
+        "Length": length
     }
 
 def predict_for_models(trained_models: dict, X_row: pd.DataFrame) -> pd.DataFrame:
     rows = []
     for name, obj in trained_models.items():
         pred = float(obj["estimator"].predict(X_row)[0])
-        rows.append({"Model": name, "PV/EUI%": pred})
-    return pd.DataFrame(rows).sort_values("PV/EUI%", ascending=False)
+        rows.append({"Model": name, "PV Annual results (kWh)": pred})
+    return pd.DataFrame(rows).sort_values("PV Annual results (kWh)", ascending=False)
 
 def get_feature_importances(estimator, feature_names):
     if hasattr(estimator, "feature_importances_"):
@@ -160,10 +163,6 @@ if not bundle_path:
 
 trained_models, leaderboard, feature_names, meta = load_bundle(bundle_path)
 
-# Filter out ANN and SVM models
-clean_models = {k: v for k, v in trained_models.items() if "ANN" not in k.upper() and "SVM" not in k.upper()}
-trained_models = clean_models
-
 # ==========================================
 # SIDEBAR: Inputs
 # ==========================================
@@ -209,31 +208,32 @@ derived = compute_derived(length, width, height, south_h, south_d, east_h, east_
 if derived["Roof Area"] < 0:
     st.error("Warning: Roof Area is negative. Please check your length and width inputs.")
 
+# Pass the exact features expected by the new notebook models
 X_infer = pd.DataFrame([{
-        "% roof Area/total floor area": derived["% roof Area/total floor area"],
-        "No. of floors": No_of_floors,
-        "Total Floor Area": derived["Total Floor Area"],
+        "Length": derived["Length"],
         "South Angle": derived["South Angle"],
         "East": derived["East"],
+        "North": derived["North"],
         "West": derived["West"],
-        "North": derived["North"]
+        "Roof Area": derived["Roof Area"],
+        "PV Area": derived["PV Area"]
     }])[feature_names] 
 
 pred_df = predict_for_models(selected, X_infer)
 
 # Top metric display
 best_model_name = pred_df.iloc[0]["Model"]
-best_model_val = pred_df.iloc[0]["PV/EUI%"]
+best_model_val = pred_df.iloc[0]["PV Annual results (kWh)"]
 
 col1, col2, col3 = st.columns(3)
-col1.metric("Highest Predicted Yield", f"{best_model_val*100:,.2f} %", f"Model: {best_model_name}")
+col1.metric("Highest Predicted Yield", f"{best_model_val:,.2f} kWh", f"Model: {best_model_name}")
 col2.metric("Available Roof Area", f"{derived['Roof Area']:,.1f} m²")
-col3.metric("Total Floor Area", f"{derived['Total Floor Area']:,.1f} m²")
+col3.metric("PV Area", f"{derived['PV Area']:,.1f} m²")
 
 st.markdown("---")
 
-# Estimate a default capacity (Assuming PV Area formula and 0.2 kW per square meter)
-estimated_pv_area = max(0, (0.564177 * derived["Roof Area"]) - 40.58)
+# Estimate a default capacity using the new PV Area feature
+estimated_pv_area = max(0, derived["PV Area"])
 default_kw = round(estimated_pv_area * 0.2, 1) if estimated_pv_area > 0 else 10.0
 
 # Sidebar input for System Capacity
@@ -247,7 +247,7 @@ with tab1:
     st.subheader("Model Predictions")
     c1, c2 = st.columns([2, 3])
     with c1:
-        st.dataframe(pred_df.style.format({"PV/EUI%": "{:,.2f}"}), use_container_width=True)
+        st.dataframe(pred_df.style.format({"PV Annual results (kWh)": "{:,.2f}"}), use_container_width=True)
         csv = pred_df.to_csv(index=False).encode('utf-8')
         st.download_button(label="📥 Download Results as CSV", data=csv, file_name='pv_predictions.csv', mime='text/csv')
     with c2:
@@ -259,7 +259,7 @@ with tab2:
     
     lcoe_data = []
     for index, row in pred_df.iterrows():
-        e0_val = row["PV/EUI%"]
+        e0_val = row["PV Annual results (kWh)"]
         # Calculate optimistic scenario (600 USD/KW)
         lcoe_opt = calculate_lcoe(e0_val, sys_capacity, capex_per_kw=600)
         # Calculate pessimistic scenario (880 USD/KW)
