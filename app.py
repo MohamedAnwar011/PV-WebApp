@@ -119,8 +119,9 @@ def get_feature_importances(estimator, feature_names):
 
 def get_geo_polygon(cx, cy, w, l):
     # Base coordinates (Cairo, Egypt)
-    base_lat = 30.0444
-    base_lon = 31.2357
+    base_lat = 30.061035160155033
+    base_lon = 31.33993948956984
+    
     
     # Convert meters to map degrees
     lat_per_m = 1.0 / 111111.0
