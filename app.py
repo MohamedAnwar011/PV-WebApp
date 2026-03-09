@@ -133,6 +133,25 @@ def make_cube_trace(x_center, y_center, z_base, dx, dy, dz, color, name):
         text=f"Height: {dz}m<br>Width: {dx}m<br>Length: {dy}m"
     )
 
+def calculate_lcoe(e0, capacity_kw, capex_per_kw, om_per_kw=5.6, r=0.10, g=0.006, n=25):
+    if capacity_kw <= 0 or e0 <= 0:
+        return 0.0
+    
+    initial_investment = capacity_kw * capex_per_kw
+    total_cost = initial_investment
+    total_energy = 0.0
+    
+    for t in range(1, n + 1):
+        # O&M cost discounted for year t
+        yearly_om = capacity_kw * om_per_kw
+        total_cost += yearly_om / ((1 + r) ** t)
+        
+        # Energy produced in year t with degradation, discounted
+        yearly_energy = e0 * ((1 - g) ** (t - 1))
+        total_energy += yearly_energy / ((1 + r) ** t)
+        
+    return total_cost / total_energy if total_energy > 0 else 0.0
+
 # ---------- Load Models ----------
 bundle_path, bundle_meta = find_latest_bundle(MODEL_DIR)
 if not bundle_path:
@@ -183,7 +202,7 @@ selected = {k: v for k, v in trained_models.items() if k in choices}
 # MAIN PAGE
 # ==========================================
 st.title("🔆 PV Annual Results Predictor")
-st.markdown("Estimate the annual photovoltaic yield (kWh) based on building geometry and urban context.")
+st.markdown("Estimate the annual photovoltaic yield (kWh) and economic viability based on building geometry and urban context.")
 
 # Calculate features
 derived = compute_derived(length, width, height, south_h, south_d, east_h, east_d, north_h, north_d, west_h, west_d, No_of_floors)
@@ -207,14 +226,22 @@ best_model_name = pred_df.iloc[0]["Model"]
 best_model_val = pred_df.iloc[0]["PV/EUI%"]
 
 col1, col2, col3 = st.columns(3)
-col1.metric("Highest Predicted Yield", f"{best_model_val*100:,.2f} %", f"Model: {best_model_name}")
+col1.metric("Highest Predicted Yield", f"{best_model_val:,.2f} kWh", f"Model: {best_model_name}")
 col2.metric("Available Roof Area", f"{derived['Roof Area']:,.1f} m²")
 col3.metric("Total Floor Area", f"{derived['Total Floor Area']:,.1f} m²")
 
 st.markdown("---")
 
+# Estimate a default capacity (Assuming PV Area formula and 0.2 kW per square meter)
+estimated_pv_area = max(0, (0.564177 * derived["Roof Area"]) - 40.58)
+default_kw = round(estimated_pv_area * 0.2, 1) if estimated_pv_area > 0 else 10.0
+
+# Sidebar input for System Capacity
+st.sidebar.markdown("### Economic Parameters")
+sys_capacity = st.sidebar.number_input("PV System Capacity (kW)", min_value=1.0, value=float(default_kw), step=1.0, help="Used for LCOE calculations.")
+
 # Use Tabs to keep the UI clean
-tab1, tab2, tab3, tab4 = st.tabs(["📊 Results", "🏙️ 3D Site Context", "🧭 Feature Importances", "📝 Methodology"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Results", "💰 Economic Viability (LCOE)", "🏙️ 3D Site Context", "🧭 Feature Importances", "📝 Methodology"])
 
 with tab1:
     st.subheader("Model Predictions")
@@ -227,6 +254,36 @@ with tab1:
         st.bar_chart(pred_df.set_index("Model"))
 
 with tab2:
+    st.subheader("Levelized Cost of Electricity (LCOE)")
+    st.markdown(f"Comparing the predicted energy output against the commercial grid tariff of **$0.0466/kWh (2.33 EGP)**. System assumed at **{sys_capacity} kW**.")
+    
+    lcoe_data = []
+    for index, row in pred_df.iterrows():
+        e0_val = row["PV/EUI%"]
+        # Calculate optimistic scenario (600 USD/KW)
+        lcoe_opt = calculate_lcoe(e0_val, sys_capacity, capex_per_kw=600)
+        # Calculate pessimistic scenario (880 USD/KW)
+        lcoe_pes = calculate_lcoe(e0_val, sys_capacity, capex_per_kw=880)
+        
+        lcoe_data.append({
+            "Model": row["Model"],
+            "Annual Output (kWh)": e0_val,
+            "Optimistic LCOE ($/kWh)": lcoe_opt,
+            "Pessimistic LCOE ($/kWh)": lcoe_pes,
+            "Optimistic Viable?": "✅ Yes" if lcoe_opt < 0.0466 else "❌ No",
+            "Pessimistic Viable?": "✅ Yes" if lcoe_pes < 0.0466 else "❌ No"
+        })
+        
+    lcoe_df = pd.DataFrame(lcoe_data)
+    st.dataframe(lcoe_df.style.format({
+        "Annual Output (kWh)": "{:,.2f}",
+        "Optimistic LCOE ($/kWh)": "${:.4f}",
+        "Pessimistic LCOE ($/kWh)": "${:.4f}"
+    }), use_container_width=True)
+    
+    st.info("Assumptions: 25-year lifespan, 10% discount rate, 0.6% annual degradation, and $5.60/kW yearly O&M cost.")
+
+with tab3:
     st.subheader("Urban Context Visualization")
     fig = go.Figure()
     fig.add_trace(make_cube_trace(0, 0, 0, width, length, height, "blue", "Main Building"))
@@ -238,7 +295,7 @@ with tab2:
     fig.update_layout(scene=dict(aspectmode='data'), margin=dict(l=0, r=0, b=0, t=0), height=600)
     st.plotly_chart(fig, use_container_width=True)
 
-with tab3:
+with tab4:
     st.subheader("What drives these predictions?")
     st.markdown("The charts below show which features the models rely on the most.")
     feat_tabs = st.tabs(list(selected.keys()))
@@ -250,11 +307,10 @@ with tab3:
             else:
                 st.bar_chart(imp)
 
-with tab4:
-    st.subheader("How this works")
+with tab5:
+    st.subheader("Methodology")
     st.write("This tool predicts the PV output based on building dimensions and the shading angles of surrounding structures.")
-    st.write("The angles are calculated using the height difference and distance between buildings.")
-    st.write("Roof Area is calculated as length times width minus 32 to account for standard rooftop equipment spacing.")
+    st.write("The Levelized Cost of Electricity (LCOE) evaluates the economic potential of the PV system over its 25-year lifecycle. The cost includes the initial setup ($600 or $880 per kW) and annual O&M ($5.60 per kW), discounted at 10% per year. Energy output drops by 0.6% annually due to hardware degradation.")
     
     with st.expander("View Full Derived Input Variables"):
         st.json(derived)
