@@ -243,7 +243,7 @@ st.sidebar.markdown("### Economic Parameters")
 sys_capacity = st.sidebar.number_input("PV System Capacity (kW)", min_value=1.0, value=float(default_kw), step=1.0, help="Used for LCOE calculations.")
 
 # Use Tabs to keep the UI clean
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Results", "💰 Economic Viability (LCOE)", "🏙️ 3D Site Context", "🧭 Feature Importances", "📝 Methodology"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Results", "💰 Economic Viability (LCOE)", "🏙️ 3D Site Context",  "📝 Methodology"])
 
 with tab1:
     st.subheader("Model Predictions")
@@ -355,19 +355,9 @@ with tab3:
     )
     
     st.pydeck_chart(r, use_container_width=True)
-with tab4:
-    st.subheader("What drives these predictions?")
-    st.markdown("The charts below show which features the models rely on the most.")
-    feat_tabs = st.tabs(list(selected.keys()))
-    for f_tab, (name, obj) in zip(feat_tabs, selected.items()):
-        with f_tab:
-            imp = get_feature_importances(obj["estimator"], feature_names)
-            if imp is None:
-                st.info(f"Feature importances not available for {name}.")
-            else:
-                st.bar_chart(imp)
 
-with tab5:
+
+with tab4:
     st.subheader("Methodology")
     
     st.markdown("""
