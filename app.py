@@ -374,13 +374,13 @@ with tab5:
     This tool estimates the annual electricity production of rooftop solar panels and evaluates if the system is a good financial investment. The calculations happen in three main steps: defining the building geometry, predicting the energy output, and checking the costs.
     
     ### 1. Building Setup and Shading
-    The app first figures out how much space is actually available for solar panels. It takes the total roof area (Length × Width) and subtracts 32 square meters to leave room for standard rooftop equipment like HVAC units. The actual solar panel area is then calculated using the formula:  
-    **PV Area = (0.564 × Roof Area) - 40.58**
+    The app first figures out how much space is actually available for solar panels. It takes the total roof area (Length × Width) and subtracts a square meter area to leave room for standard rooftop equipment like HVAC units. The actual solar panel area is then calculated   
+    
     
     Shadows from nearby buildings have a huge impact on solar efficiency. To account for this, the tool calculates a shading angle for the neighbors to the North, South, East, and West. If a neighboring building is taller than the main building, the tool measures the height difference and divides it by the distance between them to find the specific shading angle.
     
     ### 2. Machine Learning Predictions
-    Instead of running slow environmental simulations, this app uses trained machine learning models (such as Random Forest and Extra Trees). These models learned from thousands of prior building simulations. They take the building's roof area and the four shading angles as inputs to instantly predict the total annual electricity generation in kilowatt-hours (kWh).
+    Instead of running slow environmental simulations, this app uses trained machine learning models (Gradient Boosting, Random Forest, and Extra Trees). These models learned from thousands of prior building simulations. They take the building's roof area and the four shading angles as inputs to instantly predict the total annual electricity generation in kilowatt-hours (kWh).
     
     ### 3. Economic Assessment (LCOE)
     Once the app knows how much power the building can make, it calculates the Levelized Cost of Electricity (LCOE). This formula finds the true cost of each unit of solar energy over the system's 25-year lifespan. 
