@@ -137,11 +137,42 @@ if not bundle_path:
     st.error("No cached models found in models_cache/. Commit bundle_*.json and the .joblib files.")
     st.stop()
 
-trained_models, leaderboard, feature_names, meta = load_bundle(bundle_path)
-st.success(f"Loaded: {bundle_path.name} (fingerprint: {meta.get('fingerprint')})")
+# trained_models, leaderboard, feature_names, meta = load_bundle(bundle_path)
+# st.success(f"Loaded: {bundle_path.name} (fingerprint: {meta.get('fingerprint')})")
 
-st.subheader("🏁 Model Leaderboard (hold-out test set)")
-st.dataframe(leaderboard.style.format({"R2": "{:.4f}", "RMSE": "{:,.2f}", "MAE": "{:,.2f}", "Adjusted R2": "{:,.2f}", "MAPE": "{:,.2f}"}), use_container_width=True)
+# st.subheader("🏁 Model Leaderboard (hold-out test set)")
+# st.dataframe(leaderboard.style.format({"R2": "{:.4f}", "RMSE": "{:,.2f}", "MAE": "{:,.2f}", "Adjusted R2": "{:,.2f}", "MAPE": "{:,.2f}"}), use_container_width=True)
+
+def make_cube_trace(x_center, y_center, z_base, dx, dy, dz, color, name):
+    """
+    Creates a 3D mesh cube for Plotly.
+    """
+    # Define the 8 vertices of the cube
+    x = [x_center - dx/2, x_center + dx/2, x_center + dx/2, x_center - dx/2,
+         x_center - dx/2, x_center + dx/2, x_center + dx/2, x_center - dx/2]
+    y = [y_center - dy/2, y_center - dy/2, y_center + dy/2, y_center + dy/2,
+         y_center - dy/2, y_center - dy/2, y_center + dy/2, y_center + dy/2]
+    z = [z_base, z_base, z_base, z_base,
+         z_base + dz, z_base + dz, z_base + dz, z_base + dz]
+
+    # Define the 12 triangles (faces) that make up the cube
+    i = [7, 0, 0, 0, 4, 4, 6, 6, 4, 0, 3, 2]
+    j = [3, 4, 1, 2, 5, 6, 5, 2, 0, 1, 6, 3]
+    k = [0, 7, 2, 3, 6, 7, 1, 1, 5, 5, 7, 6]
+
+    return go.Mesh3d(
+        x=x, y=y, z=z,
+        i=i, j=j, k=k,
+        opacity=0.8,
+        color=color,
+        name=name,
+        flatshading=True,
+        hoverinfo='name+text',
+        text=f"Height: {dz}m<br>Width: {dx}m<br>Length: {dy}m"
+    )
+
+
+
 
 # ---------- Inputs ----------
 st.markdown("---")
