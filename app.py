@@ -9,9 +9,129 @@ MODEL_DIR = BASE_DIR / "models_cache"
 
 st.set_page_config(page_title="PV Annual Results Predictor", layout="wide", page_icon="🔆")
 
-# --- (Keep all your helper functions here: find_latest_bundle, load_bundle, compute_derived, predict_for_models, get_feature_importances, make_cube_trace) ---
+# ---------- Utilities ----------
+def find_latest_bundle(model_dir: Path):
+    if not model_dir.is_dir():
+        return None, None
+    bundles = sorted(model_dir.glob("bundle_*.json"))
+    if not bundles:
+        return None, None
+    best, best_meta = None, None
+    for bp in bundles:
+        try:
+            with open(bp, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+            meta = manifest.get("meta", {})
+            if best_meta is None or int(meta.get("trained_at", 0)) > int(best_meta.get("trained_at", 0)):
+                best, best_meta = bp, meta
+        except Exception:
+            continue
+    return best, best_meta
 
-# [Helper functions omitted for brevity, keep them exactly as they were]
+def _sanitize_name(s: str) -> str:
+    return s.replace(" ", "_").replace("(", "").replace(")", "").lower()
+
+def load_bundle(bundle_path: Path):
+    with open(bundle_path, "r", encoding="utf-8") as f:
+        manifest = json.load(f)
+
+    feature_names = manifest["feature_names"]
+    meta = manifest.get("meta", {})
+    fingerprint = meta.get("fingerprint", "")
+
+    present_files = sorted(p.name for p in MODEL_DIR.glob("*.joblib"))
+    present_map = {p: (MODEL_DIR / p) for p in present_files}
+    used_files = set()
+
+    trained = {}
+    for name, info in manifest["models"].items():
+        stored = info.get("est_path", "")
+        base = os.path.basename(stored)
+        cand = present_map.get(base) if base in present_map else None
+
+        if cand is None:
+            expected = f"{fingerprint}_{name.replace(' ', '_')}.joblib"
+            if expected in present_map:
+                cand = present_map[expected]
+
+        if cand is None:
+            target_key = _sanitize_name(name)
+            matches = [present_map[p] for p in present_files
+                       if _sanitize_name(p).find(target_key) != -1 and p not in used_files]
+            if matches:
+                cand = matches[0]
+
+        if cand is None:
+            leftovers = [present_map[p] for p in present_files if p not in used_files]
+            if len(leftovers) == (len(manifest["models"]) - len(trained)) == 1:
+                cand = leftovers[0]
+
+        if cand is None or not cand.exists():
+            raise FileNotFoundError(
+                f"Model file for '{name}' not found. Please check models_cache folder."
+            )
+
+        est = joblib.load(cand)
+        used_files.add(cand.name)
+        trained[name] = {"estimator": est, "metrics": info.get("metrics", {})}
+
+    leaderboard = pd.DataFrame(manifest["leaderboard"])
+    leaderboard.index.name = None
+    return trained, leaderboard, feature_names, meta
+
+def angle_from_neighbor(our_h: float, neigh_h: float, dist: float) -> float:
+    if dist is None or dist <= 0:
+        return 0.0
+    dh = (neigh_h or 0.0) - (our_h or 0.0)
+    if dh <= 0:
+        return 0.0
+    return math.degrees(math.atan(dh / dist))
+
+def compute_derived(length, width, height, south_h, south_d, east_h, east_d, north_h, north_d, west_h, west_d, No_of_floors):
+    roof_area = (length or 0.0) * (width or 0.0) - 32.0
+    total_floor_area = ((length or 0.0) * (width or 0.0) - 32) * No_of_floors
+    roof_area_total_floor_area = (roof_area / total_floor_area) if total_floor_area > 0 else 0.0 
+    
+    return {
+        "Roof Area": roof_area,
+        "South Angle": angle_from_neighbor(height, south_h, south_d),
+        "East":        angle_from_neighbor(height, east_h,  east_d),
+        "North":       angle_from_neighbor(height, north_h, north_d),
+        "West":        angle_from_neighbor(height, west_h,  west_d),
+        "Total Floor Area": total_floor_area,
+        "% roof Area/total floor area": roof_area_total_floor_area
+    }
+
+def predict_for_models(trained_models: dict, X_row: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+    for name, obj in trained_models.items():
+        pred = float(obj["estimator"].predict(X_row)[0])
+        rows.append({"Model": name, "PV/EUI%": pred})
+    return pd.DataFrame(rows).sort_values("PV/EUI%", ascending=False)
+
+def get_feature_importances(estimator, feature_names):
+    if hasattr(estimator, "feature_importances_"):
+        return pd.Series(estimator.feature_importances_, index=feature_names).sort_values(ascending=False)
+    return None
+
+def make_cube_trace(x_center, y_center, z_base, dx, dy, dz, color, name):
+    x = [x_center - dx/2, x_center + dx/2, x_center + dx/2, x_center - dx/2,
+         x_center - dx/2, x_center + dx/2, x_center + dx/2, x_center - dx/2]
+    y = [y_center - dy/2, y_center - dy/2, y_center + dy/2, y_center + dy/2,
+         y_center - dy/2, y_center - dy/2, y_center + dy/2, y_center + dy/2]
+    z = [z_base, z_base, z_base, z_base,
+         z_base + dz, z_base + dz, z_base + dz, z_base + dz]
+
+    i = [7, 0, 0, 0, 4, 4, 6, 6, 4, 0, 3, 2]
+    j = [3, 4, 1, 2, 5, 6, 5, 2, 0, 1, 6, 3]
+    k = [0, 7, 2, 3, 6, 7, 1, 1, 5, 5, 7, 6]
+
+    return go.Mesh3d(
+        x=x, y=y, z=z, i=i, j=j, k=k,
+        opacity=0.8, color=color, name=name,
+        flatshading=True, hoverinfo='name+text',
+        text=f"Height: {dz}m<br>Width: {dx}m<br>Length: {dy}m"
+    )
 
 # ---------- Load Models ----------
 bundle_path, bundle_meta = find_latest_bundle(MODEL_DIR)
@@ -28,7 +148,6 @@ trained_models = clean_models
 # ==========================================
 # SIDEBAR: Inputs
 # ==========================================
-st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Solar_panel_icon.svg/512px-Solar_panel_icon.svg.png", width=50) # Optional logo
 st.sidebar.title("Building Parameters")
 
 st.sidebar.markdown("### Main Building")
@@ -102,7 +221,6 @@ with tab1:
     c1, c2 = st.columns([2, 3])
     with c1:
         st.dataframe(pred_df.style.format({"PV/EUI%": "{:,.2f}"}), use_container_width=True)
-        # Download button for researchers
         csv = pred_df.to_csv(index=False).encode('utf-8')
         st.download_button(label="📥 Download Results as CSV", data=csv, file_name='pv_predictions.csv', mime='text/csv')
     with c2:
@@ -134,9 +252,9 @@ with tab3:
 
 with tab4:
     st.subheader("How this works")
-    st.write("This tool predicts the PV output based on building dimensions and the shading angles of surrounding structures. The angles are calculated using `atan((neighbor_height - building_height) / distance)`.")
-    st.write("Roof Area is calculated as `L × W - 32` to account for standard HVAC and rooftop equipment spacing.")
-    st.write("**Data Source:** Provide a brief note here about where your training data came from (e.g., EnergyPlus simulations, real-world smart meter data).")
+    st.write("This tool predicts the PV output based on building dimensions and the shading angles of surrounding structures.")
+    st.write("The angles are calculated using the height difference and distance between buildings.")
+    st.write("Roof Area is calculated as length times width minus 32 to account for standard rooftop equipment spacing.")
     
     with st.expander("View Full Derived Input Variables"):
         st.json(derived)
