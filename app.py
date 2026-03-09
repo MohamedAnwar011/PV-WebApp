@@ -339,8 +339,8 @@ with tab3:
     
     # Set the starting camera angle
     view_state = pdk.ViewState(
-        latitude=30.0444,
-        longitude=31.2357,
+        latitude=30.061035160155033,
+        longitude=31.33993948956984,
         zoom=18.5,
         pitch=60,
         bearing=45
