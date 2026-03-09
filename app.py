@@ -1,11 +1,11 @@
-# ---- TOP OF FILE (imports and absolute paths) ----
 import os, json, joblib, glob, math
 from pathlib import Path
 import pandas as pd
 import streamlit as st
+import plotly.graph_objects as go
 
 BASE_DIR  = Path(__file__).resolve().parent
-MODEL_DIR = BASE_DIR / "models_cache"   # absolute path works locally + on cloud
+MODEL_DIR = BASE_DIR / "models_cache"   
 
 st.set_page_config(page_title="PV Annual Results Predictor", layout="wide")
 st.title("🔆 PV Annual Results (kWh) — Model Comparison")
@@ -30,7 +30,6 @@ def find_latest_bundle(model_dir: Path):
     return best, best_meta
 
 def _sanitize_name(s: str) -> str:
-    # make name matching a bit more forgiving (spaces, parentheses)
     return s.replace(" ", "_").replace("(", "").replace(")", "").lower()
 
 def load_bundle(bundle_path: Path):
@@ -41,13 +40,8 @@ def load_bundle(bundle_path: Path):
     meta = manifest.get("meta", {})
     fingerprint = meta.get("fingerprint", "")
 
-    # What files does the container actually have?
     present_files = sorted(p.name for p in MODEL_DIR.glob("*.joblib"))
 
-    st.caption("Files present in models_cache/")
-    st.write(present_files)
-
-    # Prepare helpers for matching
     present_map = {p: (MODEL_DIR / p) for p in present_files}
     used_files = set()
 
@@ -57,13 +51,11 @@ def load_bundle(bundle_path: Path):
         base = os.path.basename(stored)
         cand = present_map.get(base) if base in present_map else None
 
-        # Fallback 1: expected trainer pattern
         if cand is None:
             expected = f"{fingerprint}_{name.replace(' ', '_')}.joblib"
             if expected in present_map:
                 cand = present_map[expected]
 
-        # Fallback 2: fuzzy match by model name
         if cand is None:
             target_key = _sanitize_name(name)
             matches = [present_map[p] for p in present_files
@@ -71,7 +63,6 @@ def load_bundle(bundle_path: Path):
             if matches:
                 cand = matches[0]
 
-        # Fallback 3: if count matches (same # files as models), assign any unused .joblib
         if cand is None:
             leftovers = [present_map[p] for p in present_files if p not in used_files]
             if len(leftovers) == (len(manifest["models"]) - len(trained)) == 1:
@@ -104,9 +95,9 @@ def angle_from_neighbor(our_h: float, neigh_h: float, dist: float) -> float:
     return math.degrees(math.atan(dh / dist))
 
 def compute_derived(length, width, height,
-                    south_h, south_d, east_h, east_d, north_h, north_d, west_h, west_d,No_of_floors):
+                    south_h, south_d, east_h, east_d, north_h, north_d, west_h, west_d, No_of_floors):
     roof_area = (length or 0.0) * (width or 0.0) - 32.0
-    total_floor_area = ((length or 0.0) * (width or 0.0)-32) * No_of_floors
+    total_floor_area = ((length or 0.0) * (width or 0.0) - 32) * No_of_floors
     roof_area_total_floor_area = (roof_area / total_floor_area) if total_floor_area > 0 else 0.0 
     
     return {
@@ -131,23 +122,7 @@ def get_feature_importances(estimator, feature_names):
         return pd.Series(estimator.feature_importances_, index=feature_names).sort_values(ascending=False)
     return None
 
-# ---------- Load latest cached bundle ----------
-bundle_path, bundle_meta = find_latest_bundle(MODEL_DIR)
-if not bundle_path:
-    st.error("No cached models found in models_cache/. Commit bundle_*.json and the .joblib files.")
-    st.stop()
-
-# trained_models, leaderboard, feature_names, meta = load_bundle(bundle_path)
-# st.success(f"Loaded: {bundle_path.name} (fingerprint: {meta.get('fingerprint')})")
-
-# st.subheader("🏁 Model Leaderboard (hold-out test set)")
-# st.dataframe(leaderboard.style.format({"R2": "{:.4f}", "RMSE": "{:,.2f}", "MAE": "{:,.2f}", "Adjusted R2": "{:,.2f}", "MAPE": "{:,.2f}"}), use_container_width=True)
-
 def make_cube_trace(x_center, y_center, z_base, dx, dy, dz, color, name):
-    """
-    Creates a 3D mesh cube for Plotly.
-    """
-    # Define the 8 vertices of the cube
     x = [x_center - dx/2, x_center + dx/2, x_center + dx/2, x_center - dx/2,
          x_center - dx/2, x_center + dx/2, x_center + dx/2, x_center - dx/2]
     y = [y_center - dy/2, y_center - dy/2, y_center + dy/2, y_center + dy/2,
@@ -155,7 +130,6 @@ def make_cube_trace(x_center, y_center, z_base, dx, dy, dz, color, name):
     z = [z_base, z_base, z_base, z_base,
          z_base + dz, z_base + dz, z_base + dz, z_base + dz]
 
-    # Define the 12 triangles (faces) that make up the cube
     i = [7, 0, 0, 0, 4, 4, 6, 6, 4, 0, 3, 2]
     j = [3, 4, 1, 2, 5, 6, 5, 2, 0, 1, 6, 3]
     k = [0, 7, 2, 3, 6, 7, 1, 1, 5, 5, 7, 6]
@@ -171,8 +145,16 @@ def make_cube_trace(x_center, y_center, z_base, dx, dy, dz, color, name):
         text=f"Height: {dz}m<br>Width: {dx}m<br>Length: {dy}m"
     )
 
+# ---------- Load latest cached bundle ----------
+bundle_path, bundle_meta = find_latest_bundle(MODEL_DIR)
+if not bundle_path:
+    st.error("No cached models found in models_cache/. Commit bundle_*.json and the .joblib files.")
+    st.stop()
 
+trained_models, leaderboard, feature_names, meta = load_bundle(bundle_path)
 
+st.subheader("🏁 Model Leaderboard (hold-out test set)")
+st.dataframe(leaderboard.style.format({"R2": "{:.4f}", "RMSE": "{:,.2f}", "MAE": "{:,.2f}", "Adjusted R2": "{:,.2f}", "MAPE": "{:,.2f}"}), use_container_width=True)
 
 # ---------- Inputs ----------
 st.markdown("---")
@@ -201,8 +183,35 @@ with c4:
     west_h  = st.number_input("West Height (m)", min_value=0.0, value=15.0, step=0.5)
     west_d  = st.number_input("West Distance (m)", min_value=0.0, value=10.0, step=0.5)
 
+# ---------- 3D Plotly Visualization ----------
+st.markdown("#### 🏙️ 3D Site Context")
+fig = go.Figure()
+
+# Main building in the center
+fig.add_trace(make_cube_trace(0, 0, 0, width, length, height, "blue", "Main Building"))
+
+# South neighbor (negative y direction)
+fig.add_trace(make_cube_trace(0, -(length/2 + south_d + 5), 0, width, 10, south_h, "gray", "South Neighbor"))
+
+# North neighbor (positive y direction)
+fig.add_trace(make_cube_trace(0, (length/2 + north_d + 5), 0, width, 10, north_h, "gray", "North Neighbor"))
+
+# East neighbor (positive x direction)
+fig.add_trace(make_cube_trace((width/2 + east_d + 5), 0, 0, 10, length, east_h, "gray", "East Neighbor"))
+
+# West neighbor (negative x direction)
+fig.add_trace(make_cube_trace(-(width/2 + west_d + 5), 0, 0, 10, length, west_h, "gray", "West Neighbor"))
+
+fig.update_layout(
+    scene=dict(aspectmode='data'),
+    margin=dict(l=0, r=0, b=0, t=0),
+    height=500
+)
+st.plotly_chart(fig, use_container_width=True)
+
+# ---------- Derived Features & Predictions ----------
 derived = compute_derived(length, width, height,
-                    south_h, south_d, east_h, east_d, north_h, north_d, west_h, west_d,No_of_floors)
+                    south_h, south_d, east_h, east_d, north_h, north_d, west_h, west_d, No_of_floors)
 
 with st.expander("📐 Derived Features (per your formulas)", expanded=True):
     st.dataframe(pd.DataFrame([{
@@ -214,10 +223,10 @@ with st.expander("📐 Derived Features (per your formulas)", expanded=True):
         "Total Floor Area": derived["Total Floor Area"],
         "% roof Area/total floor area": derived["% roof Area/total floor area"]
     }]).style.format("{:,.3f}"), use_container_width=True)
+    
 if derived["Roof Area"] < 0:
     st.warning("Roof Area is negative (L×W − 32). Consider adjusting inputs.")
 
-# ---------- Choose models ----------
 st.markdown("### 📦 Choose Models to Compare")
 default_models = list(trained_models.keys())
 choices = st.multiselect("Select one or more models", options=list(trained_models.keys()), default=default_models)
@@ -226,7 +235,6 @@ if not choices:
     st.stop()
 selected = {k: v for k, v in trained_models.items() if k in choices}
 
-# ---------- Predict ----------
 X_infer = pd.DataFrame([{
         "% roof Area/total floor area": derived["% roof Area/total floor area"],
         "No. of floors": No_of_floors,
@@ -240,7 +248,7 @@ X_infer = pd.DataFrame([{
 st.markdown("---")
 st.header("📈 Predictions")
 pred_df = predict_for_models(selected, X_infer)
-st.dataframe(pred_df.style.format({"PV/EUI": "{:,.2f}"}), use_container_width=True)
+st.dataframe(pred_df.style.format({"PV/EUI%": "{:,.2f}"}), use_container_width=True)
 st.bar_chart(pred_df.set_index("Model"))
 
 # ---------- Feature importances ----------
