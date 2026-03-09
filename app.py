@@ -2,7 +2,7 @@ import os, json, joblib, glob, math
 from pathlib import Path
 import pandas as pd
 import streamlit as st
-import plotly.graph_objects as go
+import pydeck as pdk  # This replaces plotly
 
 BASE_DIR  = Path(__file__).resolve().parent
 MODEL_DIR = BASE_DIR / "models_cache"   
@@ -117,24 +117,25 @@ def get_feature_importances(estimator, feature_names):
         return pd.Series(estimator.feature_importances_, index=feature_names).sort_values(ascending=False)
     return None
 
-def make_cube_trace(x_center, y_center, z_base, dx, dy, dz, color, name):
-    x = [x_center - dx/2, x_center + dx/2, x_center + dx/2, x_center - dx/2,
-         x_center - dx/2, x_center + dx/2, x_center + dx/2, x_center - dx/2]
-    y = [y_center - dy/2, y_center - dy/2, y_center + dy/2, y_center + dy/2,
-         y_center - dy/2, y_center - dy/2, y_center + dy/2, y_center + dy/2]
-    z = [z_base, z_base, z_base, z_base,
-         z_base + dz, z_base + dz, z_base + dz, z_base + dz]
-
-    i = [7, 0, 0, 0, 4, 4, 6, 6, 4, 0, 3, 2]
-    j = [3, 4, 1, 2, 5, 6, 5, 2, 0, 1, 6, 3]
-    k = [0, 7, 2, 3, 6, 7, 1, 1, 5, 5, 7, 6]
-
-    return go.Mesh3d(
-        x=x, y=y, z=z, i=i, j=j, k=k,
-        opacity=0.8, color=color, name=name,
-        flatshading=True, hoverinfo='name+text',
-        text=f"Height: {dz}m<br>Width: {dx}m<br>Length: {dy}m"
-    )
+def get_geo_polygon(cx, cy, w, l):
+    # Base coordinates (Cairo, Egypt)
+    base_lat = 30.0444
+    base_lon = 31.2357
+    
+    # Convert meters to map degrees
+    lat_per_m = 1.0 / 111111.0
+    lon_per_m = 1.0 / (111111.0 * math.cos(math.radians(base_lat)))
+    
+    # Calculate the 4 corners of the building
+    corners = [
+        (cx - w/2, cy - l/2),
+        (cx + w/2, cy - l/2),
+        (cx + w/2, cy + l/2),
+        (cx - w/2, cy + l/2),
+        (cx - w/2, cy - l/2)
+    ]
+    
+    return [[base_lon + (x * lon_per_m), base_lat + (y * lat_per_m)] for x, y in corners]
 
 def calculate_lcoe(e0, capacity_kw, capex_per_kw, om_per_kw=5.6, r=0.10, g=0.006, n=25):
     if capacity_kw <= 0 or e0 <= 0:
@@ -285,15 +286,63 @@ with tab2:
 
 with tab3:
     st.subheader("Urban Context Visualization")
-    fig = go.Figure()
-    fig.add_trace(make_cube_trace(0, 0, 0, width, length, height, "blue", "Main Building"))
-    fig.add_trace(make_cube_trace(0, -(length/2 + south_d + 5), 0, width, 10, south_h, "gray", "South Neighbor"))
-    fig.add_trace(make_cube_trace(0, (length/2 + north_d + 5), 0, width, 10, north_h, "gray", "North Neighbor"))
-    fig.add_trace(make_cube_trace((width/2 + east_d + 5), 0, 0, 10, length, east_h, "gray", "East Neighbor"))
-    fig.add_trace(make_cube_trace(-(width/2 + west_d + 5), 0, 0, 10, length, west_h, "gray", "West Neighbor"))
     
-    fig.update_layout(scene=dict(aspectmode='data'), margin=dict(l=0, r=0, b=0, t=0), height=600)
-    st.plotly_chart(fig, use_container_width=True)
+    # Create the data for all buildings
+    buildings_data = [
+        # Main Building (Light Gray)
+        {"name": "Main Building", "height": height, "color": [210, 210, 210, 255], 
+         "polygon": get_geo_polygon(0, 0, width, length)},
+        
+        # Solar Panels on top (Dark Blue)
+        {"name": "Solar Array", "height": height + 0.5, "color": [10, 50, 120, 255], 
+         "polygon": get_geo_polygon(0, 0, width * 0.8, length * 0.8)},
+        
+        # Neighbors (Slate Gray)
+        {"name": "South Neighbor", "height": south_h, "color": [140, 150, 160, 255], 
+         "polygon": get_geo_polygon(0, -(length/2 + south_d + 5), width, 10)},
+        
+        {"name": "North Neighbor", "height": north_h, "color": [140, 150, 160, 255], 
+         "polygon": get_geo_polygon(0, (length/2 + north_d + 5), width, 10)},
+        
+        {"name": "East Neighbor", "height": east_h, "color": [140, 150, 160, 255], 
+         "polygon": get_geo_polygon((width/2 + east_d + 5), 0, 10, length)},
+        
+        {"name": "West Neighbor", "height": west_h, "color": [140, 150, 160, 255], 
+         "polygon": get_geo_polygon(-(width/2 + west_d + 5), 0, 10, length)}
+    ]
+    
+    df_map = pd.DataFrame(buildings_data)
+    
+    # Setup the 3D map layer
+    layer = pdk.Layer(
+        "PolygonLayer",
+        data=df_map,
+        get_polygon="polygon",
+        get_elevation="height",
+        get_fill_color="color",
+        extruded=True,
+        wireframe=True,
+        pickable=True
+    )
+    
+    # Set the starting camera angle
+    view_state = pdk.ViewState(
+        latitude=30.0444,
+        longitude=31.2357,
+        zoom=18.5,
+        pitch=60,
+        bearing=45
+    )
+    
+    # Draw the map
+    r = pdk.Deck(
+        layers=[layer],
+        initial_view_state=view_state,
+        map_style="light",
+        tooltip={"text": "{name}\nHeight: {height}m"}
+    )
+    
+    st.pydeck_chart(r, use_container_width=True)
 
 with tab4:
     st.subheader("What drives these predictions?")
