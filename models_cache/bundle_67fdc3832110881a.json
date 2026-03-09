@@ -1,0 +1,61 @@
+{
+  "feature_names": [
+    "Length",
+    "South Angle",
+    "East",
+    "North",
+    "West",
+    "Roof Area",
+    "PV Area"
+  ],
+  "leaderboard": {
+    "Extra Trees": {
+      "R2": 0.9985089912655554,
+      "RMSE": 1809.8180990711605,
+      "MAE": 985.0771423960042
+    },
+    "Gradient Boosting": {
+      "R2": 0.9969701954802076,
+      "RMSE": 2579.895635601825,
+      "MAE": 1836.415600878867
+    },
+    "Random Forest": {
+      "R2": 0.9952295628816306,
+      "RMSE": 3237.2327178502837,
+      "MAE": 1670.76112924754
+    }
+  },
+  "meta": {
+    "fingerprint": "67fdc3832110881a",
+    "data_tag": "20072025_PV results.csv",
+    "trained_at": 1773055357,
+    "seed": 42,
+    "test_size": 0.2
+  },
+  "models": {
+    "Extra Trees": {
+      "est_path": "models_cache\\67fdc3832110881a_Extra_Trees.joblib",
+      "metrics": {
+        "R2": 0.9985089912655554,
+        "RMSE": 1809.8180990711605,
+        "MAE": 985.0771423960042
+      }
+    },
+    "Gradient Boosting": {
+      "est_path": "models_cache\\67fdc3832110881a_Gradient_Boosting.joblib",
+      "metrics": {
+        "R2": 0.9969701954802076,
+        "RMSE": 2579.895635601825,
+        "MAE": 1836.415600878867
+      }
+    },
+    "Random Forest": {
+      "est_path": "models_cache\\67fdc3832110881a_Random_Forest.joblib",
+      "metrics": {
+        "R2": 0.9952295628816306,
+        "RMSE": 3237.2327178502837,
+        "MAE": 1670.76112924754
+      }
+    }
+  }
+}
