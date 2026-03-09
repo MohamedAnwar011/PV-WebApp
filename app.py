@@ -272,8 +272,8 @@ with tab2:
             "Annual Output (kWh)": e0_val,
             "Optimistic LCOE ($/kWh)": lcoe_opt,
             "Pessimistic LCOE ($/kWh)": lcoe_pes,
-            "Optimistic Viable?": "✅ Yes" if lcoe_opt < 0.0466 else "❌ No",
-            "Pessimistic Viable?": "✅ Yes" if lcoe_pes < 0.0466 else "❌ No"
+            "Optimistic Viable?": "✅ Yes" if lcoe_opt < 0.1466 else "❌ No",
+            "Pessimistic Viable?": "✅ Yes" if lcoe_pes < 0.1466 else "❌ No"
         })
         
     lcoe_df = pd.DataFrame(lcoe_data)
